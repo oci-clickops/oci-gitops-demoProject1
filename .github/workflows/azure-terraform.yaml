@@ -46,7 +46,7 @@ jobs:
 
     - name: Clone Azure Orchestrator
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.GH_PAT }}
       run: git clone https://${GH_TOKEN}@github.com/iblake/clickops-orchestrator-azure.git ORCH
 
     - name: Load Runner Environment
