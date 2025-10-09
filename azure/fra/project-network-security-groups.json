@@ -1,0 +1,19 @@
+{
+  "security_groups": {
+    "nsg-web": {
+      "resource_group_key": "rg-demo",
+      "name": "nsg-web",
+      "resource_id": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-free-demo/providers/Microsoft.Network/networkSecurityGroups/nsg-web",
+      "rules": [
+        {
+          "name": "SSH",
+          "port": 22,
+          "protocol": "Tcp",
+          "source": "*",
+          "priority": 1000,
+          "description": "Allow SSH access"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "resource_groups": {
+    "rg-demo": {
+      "name": "rg-free-demo",
+      "location": "eastus",
+      "resource_id": "/subscriptions/__SUBSCRIPTION_ID__/resourceGroups/rg-free-demo"
+    }
+  }
+}
