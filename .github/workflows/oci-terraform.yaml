@@ -61,8 +61,10 @@ jobs:
               
     # Gather Orchestrator Module
     - name: 'Clone Orchestrator Module'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # run: git clone https://github.com/oci-landing-zones/terraform-oci-modules-orchestrator.git ORCH
-      run: git clone https://github.com/iblake/clickops-terraform-oci-modules-orchestrator.git ORCH
+      run: git clone https://${GH_TOKEN}@github.com/iblake/clickops-terraform-oci-modules-orchestrator.git ORCH
 
     # Setup Terraform Binary
     - name: 'Setup Terraform'
