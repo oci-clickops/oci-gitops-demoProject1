@@ -281,25 +281,39 @@ jobs:
       if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
       run: |
         cd ${{ github.workspace }}/ORCH
-        # Get terraform outputs if available
-        OUTPUTS=$(terraform output -json 2>/dev/null || echo '{}')
-
-        # Parse configuration files for resource details
         SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
+
+        # Extract Compute Instances
+        COMPUTE=$(find $SCENARIO_DIR -name '*compute*.json' -exec jq -r '.compute_instances | to_entries[] | "• " + .value.display_name' {} \; 2>/dev/null | sort -u)
+
+        # Extract Autonomous Databases
+        ADBS=$(find $SCENARIO_DIR -name '*database*.json' -exec jq -r '.autonomous_databases | to_entries[] | "• " + .value.display_name + " [" + (.value.db_workload // "OLTP") + "]"' {} \; 2>/dev/null | sort -u)
+
+        # Extract VCNs
+        VCNS=$(find $SCENARIO_DIR -name '*network*.json' -o -name '*vcn*.json' -exec jq -r '.vcns | to_entries[] | "• " + .value.display_name + " (" + (.value.cidr_blocks[0] // .value.cidr_block) + ")"' {} \; 2>/dev/null | sort -u)
+
+        # Extract Subnets
+        SUBNETS=$(find $SCENARIO_DIR -name '*subnet*.json' -o -name '*network*.json' -exec jq -r '.subnets | to_entries[] | "• " + .value.display_name' {} \; 2>/dev/null | sort -u)
+
+        # Get Public IPs from terraform output
+        PUBLIC_IPS=$(terraform output -json 2>/dev/null | jq -r 'to_entries[] | select(.key | contains("public_ip") or contains("ip_address")) | "• " + .value.value' 2>/dev/null || echo "")
+
         RESOURCES=$(cat <<EOF
-        $(find $SCENARIO_DIR -name '*.json' -exec echo "📁 {}" \; -exec jq -r '
-          if .compute_instances then
-            "Compute Instances: " + (.compute_instances | keys | join(", "))
-          elif .autonomous_databases then
-            "ADBs: " + (.autonomous_databases | to_entries[] | .value.display_name + " [" + (.value.db_workload // "OLTP") + "]")
-          elif .vcns then
-            "VCNs: " + (.vcns | to_entries[] | .value.display_name + " (" + .value.cidr_blocks[0] + ")")
-          elif .subnets then
-            "Subnets: " + (.subnets | keys | join(", "))
-          else
-            ""
-          end' {} \;)
-        EOF
+VCNs:
+${VCNS:-  None}
+
+Subnets:
+${SUBNETS:-  None}
+
+Compute Instances:
+${COMPUTE:-  None}
+
+Autonomous Databases:
+${ADBS:-  None}
+
+Public IPs:
+${PUBLIC_IPS:-  Retrieving...}
+EOF
         )
 
         echo "resources<<EOF" >> $GITHUB_OUTPUT
