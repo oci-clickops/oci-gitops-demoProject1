@@ -298,26 +298,22 @@ jobs:
         # Get Public IPs from terraform output
         PUBLIC_IPS=$(terraform output -json 2>/dev/null | jq -r 'to_entries[] | select(.key | contains("public_ip") or contains("ip_address")) | "• " + .value.value' 2>/dev/null || echo "")
 
-        RESOURCES=$(cat <<EOF
-VCNs:
-${VCNS:-  None}
-
-Subnets:
-${SUBNETS:-  None}
-
-Compute Instances:
-${COMPUTE:-  None}
-
-Autonomous Databases:
-${ADBS:-  None}
-
-Public IPs:
-${PUBLIC_IPS:-  Retrieving...}
-EOF
-        )
-
+        # Build resources output
         echo "resources<<EOF" >> $GITHUB_OUTPUT
-        echo "$RESOURCES" >> $GITHUB_OUTPUT
+        echo "VCNs:" >> $GITHUB_OUTPUT
+        echo "${VCNS:-  None}" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "Subnets:" >> $GITHUB_OUTPUT
+        echo "${SUBNETS:-  None}" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "Compute Instances:" >> $GITHUB_OUTPUT
+        echo "${COMPUTE:-  None}" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "Autonomous Databases:" >> $GITHUB_OUTPUT
+        echo "${ADBS:-  None}" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "Public IPs:" >> $GITHUB_OUTPUT
+        echo "${PUBLIC_IPS:-  Retrieving...}" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: Notify Slack on Apply success

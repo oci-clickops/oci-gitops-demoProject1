@@ -232,26 +232,22 @@ jobs:
         # Get Public IPs from terraform output
         PUBLIC_IPS=$(terraform output -json 2>/dev/null | jq -r 'to_entries[] | select(.key | contains("public_ip")) | "• " + .value.value' 2>/dev/null || echo "")
 
-        RESOURCES=$(cat <<EOF
-Resource Groups:
-${RGS:-  None}
-
-Virtual Networks:
-${VNETS:-  None}
-
-Network Security Groups:
-${NSGS:-  None}
-
-Virtual Machines:
-${VMS:-  None}
-
-Public IPs:
-${PUBLIC_IPS:-  Retrieving...}
-EOF
-        )
-
+        # Build resources output
         echo "resources<<EOF" >> $GITHUB_OUTPUT
-        echo "$RESOURCES" >> $GITHUB_OUTPUT
+        echo "Resource Groups:" >> $GITHUB_OUTPUT
+        echo "${RGS:-  None}" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "Virtual Networks:" >> $GITHUB_OUTPUT
+        echo "${VNETS:-  None}" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "Network Security Groups:" >> $GITHUB_OUTPUT
+        echo "${NSGS:-  None}" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "Virtual Machines:" >> $GITHUB_OUTPUT
+        echo "${VMS:-  None}" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo "Public IPs:" >> $GITHUB_OUTPUT
+        echo "${PUBLIC_IPS:-  Retrieving...}" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: Notify Slack on Apply success
