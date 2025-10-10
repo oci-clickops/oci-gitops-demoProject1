@@ -161,6 +161,37 @@ jobs:
             body: output
           });
 
+    - name: Notify Slack on success
+      if: success() && github.event_name == 'pull_request'
+      run: |
+        curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "text": "✅ Terraform plan succeeded on PR #${{ github.event.number }}",
+            "blocks": [{
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*✅ Terraform Plan Succeeded*\n*PR:* <${{ github.event.pull_request.html_url }}|#${{ github.event.number }} - ${{ github.event.pull_request.title }}>\n*Author:* @${{ github.actor }}\n*Status:* Format ✓ | Validate ✓ | Plan ✓"
+              }
+            }]
+          }'
+
+    - name: Notify Slack on failure
+      if: failure()
+      run: |
+        curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "text": "❌ Terraform workflow FAILED",
+            "blocks": [{
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*❌ Terraform Workflow FAILED*\n*PR:* <${{ github.event.pull_request.html_url }}|#${{ github.event.number }}>\n*Logs:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow logs>\n*Author:* @${{ github.actor }}"
+              }
+            }]
+          }'
 
     - name: Terraform Apply (on PR merge)
       if: >
