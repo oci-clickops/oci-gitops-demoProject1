@@ -231,8 +231,41 @@ jobs:
       if: steps.plan.outcome == 'failure'
       run: exit 1
 
+    - name: Notify Slack on Plan success
+      if: success() && github.event_name == 'pull_request'
+      run: |
+        curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "text": "✅ OCI Terraform plan succeeded on PR #${{ github.event.number }}",
+            "blocks": [{
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*✅ OCI Terraform Plan Succeeded*\n*PR:* <${{ github.event.pull_request.html_url }}|#${{ github.event.number }} - ${{ github.event.pull_request.title }}>\n*Author:* @${{ github.actor }}\n*Status:* Init ✓ | Validate ✓ | Plan ✓"
+              }
+            }]
+          }'
+
+    - name: Notify Slack on failure
+      if: failure()
+      run: |
+        curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "text": "❌ OCI Terraform workflow FAILED",
+            "blocks": [{
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*❌ OCI Terraform Workflow FAILED*\n*PR:* <${{ github.event.pull_request.html_url }}|#${{ github.event.number }}>\n*Logs:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow logs>\n*Author:* @${{ github.actor }}"
+              }
+            }]
+          }'
+
     # Deployment: Terraform apply when merge request
     - name: Terraform Apply
+      id: apply
       #if: github.event.pull_request.merged == true && github.event.action == 'closed'
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       run: |
@@ -242,6 +275,60 @@ jobs:
        echo $VARS
        terraform apply -no-color `for i in $VARS; do echo "-var-file $i"; done` --auto-approve
       continue-on-error: false
+
+    - name: Get deployed resources info
+      id: resources
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
+      run: |
+        cd ${{ github.workspace }}/ORCH
+        # Get terraform outputs if available
+        OUTPUTS=$(terraform output -json 2>/dev/null || echo '{}')
+
+        # Parse configuration files for resource details
+        SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
+        RESOURCES=$(cat <<EOF
+        $(find $SCENARIO_DIR -name '*.json' -exec echo "📁 {}" \; -exec jq -r '
+          if .compute_instances then
+            "Compute Instances: " + (.compute_instances | keys | join(", "))
+          elif .autonomous_databases then
+            "ADBs: " + (.autonomous_databases | to_entries[] | .value.display_name + " [" + (.value.db_workload // "OLTP") + "]")
+          elif .vcns then
+            "VCNs: " + (.vcns | to_entries[] | .value.display_name + " (" + .value.cidr_blocks[0] + ")")
+          elif .subnets then
+            "Subnets: " + (.subnets | keys | join(", "))
+          else
+            ""
+          end' {} \;)
+        EOF
+        )
+
+        echo "resources<<EOF" >> $GITHUB_OUTPUT
+        echo "$RESOURCES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Notify Slack on Apply success
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
+      run: |
+        RESOURCES="${{ steps.resources.outputs.resources }}"
+        source $HOME/.github-runner-env
+        curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          -H 'Content-Type: application/json' \
+          -d "{
+            \"text\": \"✅ OCI Infrastructure Deployed Successfully\",
+            \"blocks\": [{
+              \"type\": \"section\",
+              \"text\": {
+                \"type\": \"mrkdwn\",
+                \"text\": \"*✅ OCI Infrastructure Deployed*\n*Commit:* <${{ github.event.head_commit.url }}|${{ github.event.head_commit.message }}>\n*Author:* @${{ github.actor }}\n*Region:* ${OCI_REGION}\n\n*Deployed Resources:*\n\`\`\`\n${RESOURCES}\n\`\`\`\"
+              }
+            }, {
+              \"type\": \"context\",
+              \"elements\": [{
+                \"type\": \"mrkdwn\",
+                \"text\": \"<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View deployment logs>\"
+              }]
+            }]
+          }"
 
     ### WARNING #### - UNCOMMENT REST OF THE FILE JUST IF YOU WANT TO PERFORM A CLEANUP
     # Perform Destroy Preview configured in the pipeline to execute as needed after pull request 

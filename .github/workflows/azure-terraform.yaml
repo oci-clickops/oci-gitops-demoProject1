@@ -194,6 +194,7 @@ jobs:
           }'
 
     - name: Terraform Apply (on PR merge)
+      id: apply
       if: >
         github.event_name == 'pull_request_target' &&
         github.event.action == 'closed' &&
@@ -204,3 +205,64 @@ jobs:
         CONFIG_DIR=${{ github.workspace }}/azure/fra
         VARS=$(find $CONFIG_DIR -name '*.json')
         terraform apply -auto-approve $(for i in $VARS; do echo "-var-file $i"; done)
+
+    - name: Get deployed resources info
+      id: resources
+      if: >
+        github.event_name == 'pull_request_target' &&
+        github.event.action == 'closed' &&
+        github.event.pull_request.merged == true &&
+        success()
+      run: |
+        cd ${{ github.workspace }}/ORCH
+        # Get terraform outputs if available
+        OUTPUTS=$(terraform output -json 2>/dev/null || echo '{}')
+
+        # Parse configuration files for resource details
+        CONFIG_DIR=${{ github.workspace }}/azure/fra
+        RESOURCES=$(cat <<EOF
+        $(find $CONFIG_DIR -name '*.json' -exec echo "📁 {}" \; -exec jq -r '
+          if .virtual_machines then
+            "VMs: " + (.virtual_machines | keys | join(", "))
+          elif .networks then
+            "VNets: " + (.networks | to_entries[] | .value.name + " (" + .value.cidr + ")")
+          elif .security_groups then
+            "NSGs: " + (.security_groups | keys | join(", "))
+          elif .resource_groups then
+            "Resource Groups: " + (.resource_groups | to_entries[] | .value.name + " [" + .value.location + "]")
+          else
+            ""
+          end' {} \;)
+        EOF
+        )
+
+        echo "resources<<EOF" >> $GITHUB_OUTPUT
+        echo "$RESOURCES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Notify Slack on Apply success
+      if: >
+        github.event_name == 'pull_request_target' &&
+        github.event.action == 'closed' &&
+        github.event.pull_request.merged == true &&
+        success()
+      run: |
+        RESOURCES="${{ steps.resources.outputs.resources }}"
+        curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          -H 'Content-Type: application/json' \
+          -d "{
+            \"text\": \"✅ Azure Infrastructure Deployed Successfully\",
+            \"blocks\": [{
+              \"type\": \"section\",
+              \"text\": {
+                \"type\": \"mrkdwn\",
+                \"text\": \"*✅ Azure Infrastructure Deployed*\n*PR:* <${{ github.event.pull_request.html_url }}|#${{ github.event.number }} - ${{ github.event.pull_request.title }}>\n*Author:* @${{ github.actor }}\n*Region:* fra (Frankfurt)\n\n*Deployed Resources:*\n\`\`\`\n${RESOURCES}\n\`\`\`\"
+              }
+            }, {
+              \"type\": \"context\",
+              \"elements\": [{
+                \"type\": \"mrkdwn\",
+                \"text\": \"<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View deployment logs>\"
+              }]
+            }]
+          }"
