@@ -12,7 +12,7 @@
     "autonomous_databases": {
       "atp-app1": {
         "db_name": "dgcADB1",
-        "display_name": "ATP Application 1",
+        "display_name": "ATP demo 1",
         "compartment_id": null,
         "cpu_core_count": 2,
         "data_storage_size_in_tbs": 1,
