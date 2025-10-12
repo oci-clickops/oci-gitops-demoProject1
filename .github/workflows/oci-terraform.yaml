@@ -187,11 +187,12 @@ jobs:
       id: plan
       if: github.event_name == 'pull_request'
       run: |
+        source $HOME/.github-runner-env
         cd ${{ github.workspace }}/ORCH
         SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
         VARS=$(find $SCENARIO_DIR -name '*.json')
         echo "$VARS"
-        terraform plan -detailed-exitcode -no-color $(for i in $VARS; do echo "-var-file $i"; done) -out=tfplan.binary
+        terraform plan -detailed-exitcode -no-color -var="region=${OCI_REGION}" $(for i in $VARS; do echo "-var-file $i"; done) -out=tfplan.binary
         echo "plan-exit-code=$?" >> $GITHUB_OUTPUT
 
     # Run Checkov against configuration - DISABLED UNTIL OSSA APPROVAL
@@ -270,10 +271,11 @@ jobs:
         github.event.action == 'closed' &&
         github.event.pull_request.merged == true
       run: |
+        source $HOME/.github-runner-env
         cd ${{ github.workspace }}/ORCH
         SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
         VARS=$(find $SCENARIO_DIR -name '*.json')
-        terraform apply -auto-approve $(for i in $VARS; do echo "-var-file $i"; done)
+        terraform apply -auto-approve -var="region=${OCI_REGION}" $(for i in $VARS; do echo "-var-file $i"; done)
 
     - name: Get deployed resources info
       id: resources
