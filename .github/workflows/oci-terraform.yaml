@@ -1,16 +1,18 @@
 name: OCI Terraform pipeline
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'oci/**'  
   pull_request:
     branches:
       - main
     paths:
-    - 'oci/**' 
+      - 'oci/**'
+  pull_request_target:
+    types:
+      - closed
+    branches:
+      - main
+    paths:
+      - 'oci/**'
 
   workflow_dispatch:
     inputs:
@@ -22,108 +24,70 @@ on:
         options:
           - dev
           - staging
-          - prod 
-
-# env:
-  #TF_LOG: INFO
+          - prod
 
 jobs:
- projects:
+  projects:
     name: 'project'
     env:
-     TF_ACTION_WORKSPACE: "default"
-    # Operational scenario
-     SCENARIO: oci
-     CORE_MODULE_VERSION: v0.0.17
-            
-    # runs-on: ubuntu-latest
+      TF_ACTION_WORKSPACE: "default"
+      SCENARIO: oci
+      CORE_MODULE_VERSION: v0.0.17
+
     runs-on: self-hosted
     permissions:
       pull-requests: write
       actions: read
       contents: read
-    
+      packages: read
+      repository-projects: read
+
     steps:
-    # Checkout the repository to the GitHub Actions runner
     - name: 'Checkout'
       uses: actions/checkout@v4
 
-    # Runner package dependencies
-    - uses: actions/setup-node@v2
+    - name: Setup Node
+      uses: actions/setup-node@v4
       with:
-        node-version: '20'  
-    
-    # Runner setup - ENABLE WHILE USING CHECKOV
-    # - name: Install Checkov
-    #   run: |
-    #     sudo dnf install python3.9-pip python3-setuptools python3-pip-wheel -y
-    #     pip install checkov
-              
-    # Gather Orchestrator Module
-    - name: 'Clone Orchestrator Module'
+        node-version: '20'
+
+    - name: Configure Git credentials for private repos
+      run: |
+        git config --global url."https://${{ secrets.GH_PAT }}@github.com/".insteadOf "https://github.com/"
+
+    - name: Clone OCI Orchestrator
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
-      # run: git clone https://github.com/oci-landing-zones/terraform-oci-modules-orchestrator.git ORCH
       run: git clone https://${GH_TOKEN}@github.com/iblake/clickops-terraform-oci-modules-orchestrator.git ORCH
 
-    # Setup Terraform Binary
     - name: 'Setup Terraform'
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.12.1
         terraform_wrapper: true
 
-    # Setup Terraform backend overriding default Orchestrator Provider options
     - name: 'Setup Orchestrator Instance Principal Auth'
       id: backend
       run: |
-        cat > ${{ github.workspace }}/ORCH/providers.tf << EOF
-        data "oci_identity_regions" "these" {}
-
-        data "oci_identity_tenancy" "this" {
-          tenancy_id = var.tenancy_ocid
-        }
-
-        locals {
-          regions_map         = { for r in data.oci_identity_regions.these.regions : r.key => r.name } # All regions indexed by region key.
-          regions_map_reverse = { for r in data.oci_identity_regions.these.regions : r.name => r.key } # All regions indexed by region name.
-          home_region_key     = data.oci_identity_tenancy.this.home_region_key                         # Home region key obtained from the tenancy data source
-          region_key          = lower(local.regions_map_reverse[var.region])                           # Region key obtained from the region name
+        cat > ${{ github.workspace }}/ORCH/providers.tf << 'EOF'
+        provider "oci" {
+          auth                = "InstancePrincipal"
+          region              = var.region
+          ignore_defined_tags = ["Oracle-Tags.CreatedBy", "Oracle-Tags.CreatedOn"]
         }
 
         provider "oci" {
-           auth                = "InstancePrincipal"
-          region               = var.region
-          tenancy_ocid         = var.tenancy_ocid
-          user_ocid            = var.user_ocid
-          fingerprint          = var.fingerprint
-          private_key_path     = var.private_key_path
-          private_key_password = var.private_key_password
-          ignore_defined_tags  = ["Oracle-Tags.CreatedBy", "Oracle-Tags.CreatedOn"]
+          auth                = "InstancePrincipal"
+          alias               = "home"
+          region              = var.region
+          ignore_defined_tags = ["Oracle-Tags.CreatedBy", "Oracle-Tags.CreatedOn"]
         }
 
         provider "oci" {
-          auth                 = "InstancePrincipal"
-          alias                = "home"
-          region               = local.regions_map[local.home_region_key]
-          tenancy_ocid         = var.tenancy_ocid
-          user_ocid            = var.user_ocid
-          fingerprint          = var.fingerprint
-          private_key_path     = var.private_key_path
-          private_key_password = var.private_key_password
-          ignore_defined_tags  = ["Oracle-Tags.CreatedBy", "Oracle-Tags.CreatedOn"]
-        }
-
-        provider "oci" {
-          auth                 = "InstancePrincipal"
-          alias                = "secondary_region"
-          region               = local.regions_map[local.home_region_key]
-          tenancy_ocid         = var.tenancy_ocid
-          user_ocid            = var.user_ocid
-          fingerprint          = var.fingerprint
-          private_key_path     = var.private_key_path
-          private_key_password = var.private_key_password
-          ignore_defined_tags  = ["Oracle-Tags.CreatedBy", "Oracle-Tags.CreatedOn"]
+          auth                = "InstancePrincipal"
+          alias               = "secondary_region"
+          region              = var.region
+          ignore_defined_tags = ["Oracle-Tags.CreatedBy", "Oracle-Tags.CreatedOn"]
         }
 
         terraform {
@@ -134,102 +98,88 @@ jobs:
               configuration_aliases = [oci.home]
             }
           }
-            backend "oci" {
-              bucket = "__BUCKET__"
-              namespace ="__NAMESPACE__"
-              auth = "InstancePrincipal"
-              region = "__REGION__"
-            }
+          backend "oci" {
+            bucket    = "__BUCKET__"
+            namespace = "__NAMESPACE__"
+            auth      = "InstancePrincipal"
+            region    = "__REGION__"
+          }
         }
         EOF
         source $HOME/.github-runner-env
         sed -i "s|__BUCKET__|$OCI_TF_STATE_BUCKET|g" ${{ github.workspace }}/ORCH/providers.tf
         sed -i "s|__NAMESPACE__|$OCI_TF_STATE_NAMESPACE|g" ${{ github.workspace }}/ORCH/providers.tf
-        sed -i "s|__REGION__|$REGION|g" ${{ github.workspace }}/ORCH/providers.tf
+        sed -i "s|__REGION__|$OCI_REGION|g" ${{ github.workspace }}/ORCH/providers.tf
+        cd ${{ github.workspace }}/ORCH
+        terraform fmt providers.tf
 
-    # Landing Zone Terraform Orchestrator and Base Modules initialization
     - name: 'Terraform Init'
       id: init
       run: |
-       cd ${{ github.workspace }}/ORCH
-       terraform init
-        # terraform init -upgrade \
-        # -backend-config="bucket=${{ vars.OCI_TF_STATE_BUCKET }}" \
-        # -backend-config="namespace=${{ vars.OCI_TF_STATE_NAMESPACE }}" \
-        # -backend-config="region=${{ vars.REGION }}" \
-        # -backend-config="key=${{ env.SCENARIO_DIR }}/terraform.tfstate" || exit 1
-    
-    # Integration: Terraform Format
-    # - name: 'Terraform Format'
-    #   id: format
-    #   if: github.ref != 'refs/heads/main'
-    #   run: |
-    #    cd ${{ github.workspace }}/ORCH
-    #    terraform fmt -check
-      
-    # Test: Terraform Validate
+        cd ${{ github.workspace }}/ORCH
+        terraform init
+
+    - name: Terraform Format
+      id: format
+      if: github.event_name == 'pull_request'
+      run: |
+        cd ${{ github.workspace }}/ORCH
+        terraform fmt
+        terraform fmt -check
+
     - name: 'Terraform Validate'
       id: validate
-      if: github.ref != 'refs/heads/main' && (success() || failure())
+      if: github.event_name == 'pull_request'
       run: |
-       cd ${{ github.workspace }}/ORCH
-       terraform validate -no-color
-      
-    # Integration: Terraform Plan
+        cd ${{ github.workspace }}/ORCH
+        terraform validate -no-color
+
     - name: 'Terraform Plan'
       id: plan
       if: github.event_name == 'pull_request'
       run: |
-       cd ${{ github.workspace }}/ORCH
-       SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
-       VARS=`find $SCENARIO_DIR -name *json`
-       echo $VARS
-       #export TF_LOG=DEBUG
-       terraform plan -no-color `for i in $VARS; do echo "-var-file $i"; done` --out tfplan.binary
-      # continue-on-error: true
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
+        VARS=$(find $SCENARIO_DIR -name '*.json')
+        echo "$VARS"
+        terraform plan -detailed-exitcode -no-color \
+          -var="region=${OCI_REGION}" \
+          -var="tenancy_ocid=dummy" \
+          -var="user_ocid=dummy" \
+          -var="fingerprint=dummy" \
+          -var="private_key_path=dummy" \
+          -var="private_key_password=dummy" \
+          $(for i in $VARS; do echo "-var-file $i"; done) -out=tfplan.binary
+        echo "plan-exit-code=$?" >> $GITHUB_OUTPUT
 
-    # Run Checkov against configuration - DISABLED UNTIL OSSA APPROVAL
-    # - name: Checkov
-    #   id: checkov
-    #   if: success()
-    #   run: |
-    #     cd ${{ github.workspace }}/ORCH
-    #     terraform show -json tfplan.binary | jq '.' > tfplan.json
-    #     checkov -f tfplan.json --framework terraform_plan -o sarif
-
-    # Send result of testing & integration to the pull request information issue
-    - name: 'Update Pull Request'
-      uses: actions/github-script@v6
-      if: github.event_name == 'pull_request' && (success() || failure())
+    - name: Post PR comment
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
       env:
-        PLAN: "${{ steps.plan.outputs.stdout }}"
+        PLAN: ${{ steps.plan.outputs.stdout }}
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const output = `#### Terraform Initialization ⚙️\`${{ steps.init.outcome}}\`
-          #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-          ### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+          const output = `#### Terraform Format 🖌 \`${{ steps.format.outcome }}\`
+          #### Terraform Validate 🤖 \`${{ steps.validate.outcome }}\`
+          #### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
 
           <details><summary>Show Plan</summary>
 
-          \`\`\`terraform\n
+          \`\`\`terraform
           ${process.env.PLAN}
           \`\`\`
 
           </details>
 
-          *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+          *Pushed by: @${{ github.actor }}*`;
           github.rest.issues.createComment({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
             body: output
-          })
-    
-    # Integration: Show fail status if plan failed
-    - name: 'Terraform Plan Status'
-      if: steps.plan.outcome == 'failure'
-      run: exit 1
+          });
 
     - name: Notify Slack on Plan success
       if: success() && github.event_name == 'pull_request'
@@ -263,42 +213,43 @@ jobs:
             }]
           }'
 
-    # Deployment: Terraform apply when merge request
-    - name: Terraform Apply
+    - name: Terraform Apply (on PR merge)
       id: apply
-      #if: github.event.pull_request.merged == true && github.event.action == 'closed'
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: >
+        github.event_name == 'pull_request_target' &&
+        github.event.action == 'closed' &&
+        github.event.pull_request.merged == true
       run: |
-       cd ${{ github.workspace }}/ORCH
-       SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
-       VARS=`find $SCENARIO_DIR -name *json`
-       echo $VARS
-       terraform apply -no-color `for i in $VARS; do echo "-var-file $i"; done` --auto-approve
-      continue-on-error: false
+        source $HOME/.github-runner-env
+        cd ${{ github.workspace }}/ORCH
+        SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
+        VARS=$(find $SCENARIO_DIR -name '*.json')
+        terraform apply -auto-approve \
+          -var="region=${OCI_REGION}" \
+          -var="tenancy_ocid=dummy" \
+          -var="user_ocid=dummy" \
+          -var="fingerprint=dummy" \
+          -var="private_key_path=dummy" \
+          -var="private_key_password=dummy" \
+          $(for i in $VARS; do echo "-var-file $i"; done)
 
     - name: Get deployed resources info
       id: resources
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
+      if: >
+        github.event_name == 'pull_request_target' &&
+        github.event.action == 'closed' &&
+        github.event.pull_request.merged == true &&
+        success()
       run: |
         cd ${{ github.workspace }}/ORCH
         SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
 
-        # Extract Compute Instances
         COMPUTE=$(find $SCENARIO_DIR -name '*compute*.json' -exec jq -r '.compute_instances | to_entries[] | "• " + .value.display_name' {} \; 2>/dev/null | sort -u)
-
-        # Extract Autonomous Databases
         ADBS=$(find $SCENARIO_DIR -name '*database*.json' -exec jq -r '.autonomous_databases | to_entries[] | "• " + .value.display_name + " [" + (.value.db_workload // "OLTP") + "]"' {} \; 2>/dev/null | sort -u)
-
-        # Extract VCNs
         VCNS=$(find $SCENARIO_DIR -name '*network*.json' -o -name '*vcn*.json' -exec jq -r '.vcns | to_entries[] | "• " + .value.display_name + " (" + (.value.cidr_blocks[0] // .value.cidr_block) + ")"' {} \; 2>/dev/null | sort -u)
-
-        # Extract Subnets
         SUBNETS=$(find $SCENARIO_DIR -name '*subnet*.json' -o -name '*network*.json' -exec jq -r '.subnets | to_entries[] | "• " + .value.display_name' {} \; 2>/dev/null | sort -u)
-
-        # Get Public IPs from terraform output
         PUBLIC_IPS=$(terraform output -json 2>/dev/null | jq -r 'to_entries[] | select(.key | contains("public_ip") or contains("ip_address")) | "• " + .value.value' 2>/dev/null || echo "")
 
-        # Build resources output
         echo "resources<<EOF" >> $GITHUB_OUTPUT
         echo "VCNs:" >> $GITHUB_OUTPUT
         echo "${VCNS:-  None}" >> $GITHUB_OUTPUT
@@ -317,7 +268,11 @@ jobs:
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: Notify Slack on Apply success
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
+      if: >
+        github.event_name == 'pull_request_target' &&
+        github.event.action == 'closed' &&
+        github.event.pull_request.merged == true &&
+        success()
       run: |
         RESOURCES="${{ steps.resources.outputs.resources }}"
         source $HOME/.github-runner-env
@@ -329,7 +284,7 @@ jobs:
               \"type\": \"section\",
               \"text\": {
                 \"type\": \"mrkdwn\",
-                \"text\": \"*✅ OCI Infrastructure Deployed*\n*Commit:* <${{ github.event.head_commit.url }}|${{ github.event.head_commit.message }}>\n*Author:* @${{ github.actor }}\n*Region:* ${OCI_REGION}\n\n*Deployed Resources:*\n\`\`\`\n${RESOURCES}\n\`\`\`\"
+                \"text\": \"*✅ OCI Infrastructure Deployed*\n*PR:* <${{ github.event.pull_request.html_url }}|#${{ github.event.number }} - ${{ github.event.pull_request.title }}>\n*Author:* @${{ github.actor }}\n*Region:* ${OCI_REGION}\n\n*Deployed Resources:*\n\`\`\`\n${RESOURCES}\n\`\`\`\"
               }
             }, {
               \"type\": \"context\",
@@ -339,57 +294,3 @@ jobs:
               }]
             }]
           }"
-
-    ### WARNING #### - UNCOMMENT REST OF THE FILE JUST IF YOU WANT TO PERFORM A CLEANUP
-    # Perform Destroy Preview configured in the pipeline to execute as needed after pull request 
-    # - name: Terraform Destroy Preview
-    #   id: destroypreview
-    #   if: github.event_name == 'pull_request'
-    #   run: |
-    #    cd ${{ github.workspace }}/OELZ_CORE
-    #    OE01_DIR=${{ github.workspace }}/OE01
-    #    VARS=`ls $OE01_DIR/*json`
-    #    echo "${{ secrets.provider_private_key }}" > oci4cca.pem
-    #    terraform destroy -no-color `for i in $VARS; do echo "-var-file $i"; done`
-    #   continue-on-error: false
-
-    #     # Send result of testing & integration to the pull request information issue
-    # - name: 'Update Pull Request with Destroy Preview information'
-    #   uses: actions/github-script@v6
-    #   if: github.event_name == 'pull_request'
-    #   env:
-    #     PLAN: "${{ steps.destroypreview.outputs.stdout }}"
-    #   with:
-    #     github-token: ${{ secrets.GITHUB_TOKEN }}
-    #     script: |
-    #       const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
-    #       #### Terraform Initialization ⚙️\`${{ steps.init.outcome}}\`
-    #       #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-    #       ### Terraform Destroy Preview 📖\`${{ steps.destroypreview.outcome }}\`
-          
-    #       <details><summary>Show Destroy</summary>
-          
-    #       \`\`\`terraform\n
-    #       ${process.env.DESTROYPREVIEW}
-    #       \`\`\`
-          
-    #       </details>
-          
-    #       *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
-    #       github.rest.issues.createComment({
-    #         issue_number: context.issue.number,
-    #         owner: context.repo.owner,
-    #         repo: context.repo.repo,
-    #         body: output
-    #       })
-
-    #   # Destroy step configured in the pipeline to execute as needed after merge request 
-    # - name: Terraform Destroy
-    #   id: destroy
-    #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    #   run: |
-    #    cd ${{ github.workspace }}/ORCH
-    #    SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
-    #    VARS=`ls $SCENARIO_DIR/oci-credentials.tfvars.json`
-    #    terraform destroy -no-color `for i in $VARS; do echo "-var-file $i"; done` --auto-approve
-    #   continue-on-error: false
