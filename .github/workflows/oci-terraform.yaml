@@ -153,6 +153,8 @@ jobs:
         sed -i "s|__BUCKET__|$OCI_TF_STATE_BUCKET|g" ${{ github.workspace }}/ORCH/providers.tf
         sed -i "s|__NAMESPACE__|$OCI_TF_STATE_NAMESPACE|g" ${{ github.workspace }}/ORCH/providers.tf
         sed -i "s|__REGION__|$OCI_REGION|g" ${{ github.workspace }}/ORCH/providers.tf
+        cd ${{ github.workspace }}/ORCH
+        terraform fmt providers.tf
 
     # Landing Zone Terraform Orchestrator and Base Modules initialization
     - name: 'Terraform Init'
