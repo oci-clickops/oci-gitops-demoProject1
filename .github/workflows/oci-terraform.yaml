@@ -131,6 +131,8 @@ jobs:
         sed -i "s|__REGION__|$OCI_REGION|g" ${{ github.workspace }}/ORCH/providers.tf
         cd ${{ github.workspace }}/ORCH
         terraform fmt providers.tf
+        # Remove files that reference unused data sources
+        rm -f data.tf locals.tf 2>/dev/null || true
 
     # Landing Zone Terraform Orchestrator and Base Modules initialization
     - name: 'Terraform Init'
