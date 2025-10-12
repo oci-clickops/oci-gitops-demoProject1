@@ -64,11 +64,9 @@ jobs:
     #     sudo dnf install python3.9-pip python3-setuptools python3-pip-wheel -y
     #     pip install checkov
               
-    # Gather Orchestrator Module
-    - name: 'Clone Orchestrator Module'
+    - name: Clone OCI Orchestrator
       env:
         GH_TOKEN: ${{ secrets.GH_PAT }}
-      # run: git clone https://github.com/oci-landing-zones/terraform-oci-modules-orchestrator.git ORCH
       run: git clone https://${GH_TOKEN}@github.com/iblake/clickops-terraform-oci-modules-orchestrator.git ORCH
 
     # Setup Terraform Binary
