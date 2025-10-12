@@ -229,8 +229,9 @@ jobs:
         # Extract Resource Groups
         RGS=$(find $CONFIG_DIR -name '*resource*.json' -exec jq -r '.resource_groups | to_entries[] | "• " + .value.name + " [" + .value.location + "]"' {} \; 2>/dev/null | sort -u)
 
-        # Get Public IPs from terraform output
-        PUBLIC_IPS=$(terraform output -json 2>/dev/null | jq -r 'to_entries[] | select(.key | contains("public_ip")) | "• " + .value.value' 2>/dev/null || echo "")
+        # Get Public IPs using Azure CLI
+        RG_NAME=$(jq -r '.resource_groups | to_entries[0].value.name' $CONFIG_DIR/project-resource-groups.json)
+        PUBLIC_IPS=$(az network public-ip list --resource-group "$RG_NAME" --query "[].{name:name, ip:ipAddress}" -o tsv 2>/dev/null | awk '{print "• " $1 ": " $2}' || echo "")
 
         # Build resources output
         echo "resources<<EOF" >> $GITHUB_OUTPUT
