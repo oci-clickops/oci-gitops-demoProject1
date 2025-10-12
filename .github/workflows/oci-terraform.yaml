@@ -242,29 +242,59 @@ jobs:
         success()
       run: |
         cd ${{ github.workspace }}/ORCH
-        SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
 
-        COMPUTE=$(find $SCENARIO_DIR -name '*compute*.json' -exec jq -r '.compute_instances | to_entries[] | "• " + .value.display_name' {} \; 2>/dev/null | sort -u)
-        ADBS=$(find $SCENARIO_DIR -name '*database*.json' -exec jq -r '.autonomous_databases | to_entries[] | "• " + .value.display_name + " [" + (.value.db_workload // "OLTP") + "]"' {} \; 2>/dev/null | sort -u)
-        VCNS=$(find $SCENARIO_DIR -name '*network*.json' -o -name '*vcn*.json' -exec jq -r '.vcns | to_entries[] | "• " + .value.display_name + " (" + (.value.cidr_blocks[0] // .value.cidr_block) + ")"' {} \; 2>/dev/null | sort -u)
-        SUBNETS=$(find $SCENARIO_DIR -name '*subnet*.json' -o -name '*network*.json' -exec jq -r '.subnets | to_entries[] | "• " + .value.display_name' {} \; 2>/dev/null | sort -u)
-        PUBLIC_IPS=$(terraform output -json 2>/dev/null | jq -r 'to_entries[] | select(.key | contains("public_ip") or contains("ip_address")) | "• " + .value.value' 2>/dev/null || echo "")
+        # Get Autonomous Databases from terraform state
+        ADBS=$(terraform show -json 2>/dev/null | jq -r '
+          .values.root_module.child_modules[]? |
+          select(.address | contains("oci_lz_autonomous_databases")) |
+          .resources[]? |
+          select(.type == "oci_database_autonomous_database") |
+          "• " + .values.display_name + " [" + .values.db_workload + "]\n  Connection: " + .values.connection_strings[0].profiles[0].value
+        ' 2>/dev/null)
+
+        # Get VCNs from terraform state
+        VCNS=$(terraform show -json 2>/dev/null | jq -r '
+          .values.root_module.child_modules[]? |
+          .resources[]? |
+          select(.type == "oci_core_vcn") |
+          "• " + .values.display_name + " (" + .values.cidr_blocks[0] + ")"
+        ' 2>/dev/null)
+
+        # Get Compute instances from terraform state
+        COMPUTE=$(terraform show -json 2>/dev/null | jq -r '
+          .values.root_module.child_modules[]? |
+          .resources[]? |
+          select(.type == "oci_core_instance") |
+          "• " + .values.display_name
+        ' 2>/dev/null)
+
+        # Get Public IPs from terraform outputs
+        PUBLIC_IPS=$(terraform output -json 2>/dev/null | jq -r '
+          to_entries[] |
+          select(.key | contains("public_ip") or contains("ip_address")) |
+          "• " + .value.value
+        ' 2>/dev/null)
 
         echo "resources<<EOF" >> $GITHUB_OUTPUT
-        echo "VCNs:" >> $GITHUB_OUTPUT
-        echo "${VCNS:-  None}" >> $GITHUB_OUTPUT
-        echo "" >> $GITHUB_OUTPUT
-        echo "Subnets:" >> $GITHUB_OUTPUT
-        echo "${SUBNETS:-  None}" >> $GITHUB_OUTPUT
-        echo "" >> $GITHUB_OUTPUT
-        echo "Compute Instances:" >> $GITHUB_OUTPUT
-        echo "${COMPUTE:-  None}" >> $GITHUB_OUTPUT
-        echo "" >> $GITHUB_OUTPUT
-        echo "Autonomous Databases:" >> $GITHUB_OUTPUT
-        echo "${ADBS:-  None}" >> $GITHUB_OUTPUT
-        echo "" >> $GITHUB_OUTPUT
-        echo "Public IPs:" >> $GITHUB_OUTPUT
-        echo "${PUBLIC_IPS:-  Retrieving...}" >> $GITHUB_OUTPUT
+        if [ -n "$VCNS" ]; then
+          echo "VCNs:" >> $GITHUB_OUTPUT
+          echo "$VCNS" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+        fi
+        if [ -n "$COMPUTE" ]; then
+          echo "Compute Instances:" >> $GITHUB_OUTPUT
+          echo "$COMPUTE" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+        fi
+        if [ -n "$ADBS" ]; then
+          echo "Autonomous Databases:" >> $GITHUB_OUTPUT
+          echo "$ADBS" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+        fi
+        if [ -n "$PUBLIC_IPS" ]; then
+          echo "Public IPs:" >> $GITHUB_OUTPUT
+          echo "$PUBLIC_IPS" >> $GITHUB_OUTPUT
+        fi
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: Notify Slack on Apply success
