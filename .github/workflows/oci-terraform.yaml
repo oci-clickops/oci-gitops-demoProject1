@@ -106,7 +106,7 @@ jobs:
           }
         }
         EOF
-        source $HOME/.github-runner-env
+        source /opt/actions-runner/.github-runner-env
         sed -i "s|__BUCKET__|$OCI_TF_STATE_BUCKET|g" ${{ github.workspace }}/ORCH/providers.tf
         sed -i "s|__NAMESPACE__|$OCI_TF_STATE_NAMESPACE|g" ${{ github.workspace }}/ORCH/providers.tf
         sed -i "s|__REGION__|$OCI_REGION|g" ${{ github.workspace }}/ORCH/providers.tf
@@ -138,7 +138,7 @@ jobs:
       id: plan
       if: github.event_name == 'pull_request'
       run: |
-        source $HOME/.github-runner-env
+        source /opt/actions-runner/.github-runner-env
         cd ${{ github.workspace }}/ORCH
         SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
         VARS=$(find $SCENARIO_DIR -name '*.json')
@@ -220,7 +220,7 @@ jobs:
         github.event.action == 'closed' &&
         github.event.pull_request.merged == true
       run: |
-        source $HOME/.github-runner-env
+        source /opt/actions-runner/.github-runner-env
         cd ${{ github.workspace }}/ORCH
         SCENARIO_DIR=${{ github.workspace }}/$SCENARIO
         VARS=$(find $SCENARIO_DIR -name '*.json')
@@ -305,7 +305,7 @@ jobs:
         success()
       run: |
         RESOURCES="${{ steps.resources.outputs.resources }}"
-        source $HOME/.github-runner-env
+        source /opt/actions-runner/.github-runner-env
         curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
           -H 'Content-Type: application/json' \
           -d "{
