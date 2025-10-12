@@ -173,6 +173,7 @@ jobs:
       if: github.event_name == 'pull_request'
       run: |
         cd ${{ github.workspace }}/ORCH
+        terraform fmt
         terraform fmt -check
 
     - name: Terraform Validate
