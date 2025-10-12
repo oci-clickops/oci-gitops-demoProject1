@@ -14,7 +14,7 @@
         "db_name": "dgcADB1",
         "display_name": "ATP Application 1",
         "compartment_id": null,
-        "cpu_core_count": 1,
+        "cpu_core_count": 2,
         "data_storage_size_in_tbs": 1,
         "compute_model": "ECPU",
         "db_workload": "OLTP",
