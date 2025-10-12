@@ -119,6 +119,11 @@ jobs:
         cd ${{ github.workspace }}/ORCH
         terraform init
 
+    - name: Replace sensitive values in config files
+      run: |
+        source /opt/actions-runner/.github-runner-env
+        find ${{ github.workspace }}/oci -name '*.json' -exec sed -i "s|__ATP_ADMIN_PASSWORD__|$ATP_ADMIN_PASSWORD|g" {} \;
+
     - name: Terraform Format
       id: format
       if: github.event_name == 'pull_request'
