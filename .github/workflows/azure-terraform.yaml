@@ -28,7 +28,7 @@ on:
 
 jobs:
   terraform:
-    name: Terraform
+    name: 'Azure Terraform pipeline'
     runs-on: self-hosted
     permissions:
       contents: read
