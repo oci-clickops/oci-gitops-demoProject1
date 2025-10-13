@@ -121,6 +121,11 @@ jobs:
         echo "SSH key found and ready"
         echo "SSH_PUBLIC_KEY=$(cat $SSH_KEY_PATH)" >> $GITHUB_OUTPUT
 
+    - name: Mask SSH Key in logs
+      run: |
+        SSH_KEY=$(cat $HOME/.ssh/azure_vm_key.pub)
+        echo "::add-mask::$SSH_KEY"
+
     - name: Terraform Plan
       if: github.event_name == 'pull_request'
       id: plan
