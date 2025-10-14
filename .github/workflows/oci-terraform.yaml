@@ -28,7 +28,7 @@ on:
 
 jobs:
   projects:
-    name: 'projAzure Terraform pipeline'
+    name: 'OCI Terraform pipeline'
     env:
       TF_ACTION_WORKSPACE: "default"
       SCENARIO: oci
