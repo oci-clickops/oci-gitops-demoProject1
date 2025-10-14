@@ -135,14 +135,29 @@ jobs:
         CONFIG_DIR=${{ github.workspace }}/azure/fra
         VARS=$(find $CONFIG_DIR -name '*.json')
         echo "$VARS"
-        terraform plan -detailed-exitcode -no-color $(for i in $VARS; do echo "-var-file $i"; done) -out=tfplan.binary
-        echo "plan-exit-code=$?" >> $GITHUB_OUTPUT
+
+        # Run terraform plan and capture output
+        PLAN_OUTPUT=$(terraform plan -detailed-exitcode -no-color $(for i in $VARS; do echo "-var-file $i"; done) -out=tfplan.binary 2>&1)
+        PLAN_EXIT_CODE=$?
+
+        # Sanitize sensitive information
+        SANITIZED_PLAN=$(echo "$PLAN_OUTPUT" | \
+          sed -E "s|/subscriptions/[a-f0-9-]{36}|/subscriptions/***|g" | \
+          sed -E "s|\"tenant_id\"[[:space:]]*=[[:space:]]*\"[a-f0-9-]{36}\"|\"tenant_id\" = \"***\"|g" | \
+          sed -E "s|\"subscription_id\"[[:space:]]*=[[:space:]]*\"[a-f0-9-]{36}\"|\"subscription_id\" = \"***\"|g" | \
+          sed -E "s|ssh-rsa AAAA[A-Za-z0-9+/=]{300,}|ssh-rsa ***REDACTED***|g" | \
+          sed -E "s|-----BEGIN PUBLIC KEY-----[^-]*-----END PUBLIC KEY-----|***PUBLIC_KEY_REDACTED***|g")
+
+        echo "plan_output<<EOF" >> $GITHUB_OUTPUT
+        echo "$SANITIZED_PLAN" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        echo "plan-exit-code=$PLAN_EXIT_CODE" >> $GITHUB_OUTPUT
 
     - name: Post PR comment
       if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
       env:
-        PLAN: ${{ steps.plan.outputs.stdout }}
+        PLAN: ${{ steps.plan.outputs.plan_output }}
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
